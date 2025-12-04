@@ -4,26 +4,25 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 public class FloridaInsurance {
 
     public static void main(String[] args) {
-        List<InsuranceRecord> records;
+        FloridaInsuranceStats stats;
 
         try {
-            records = readRecordsFromZip("FL_insurance.csv.zip");
+            stats = readRecordsFromZip("FL_insurance.csv.zip");
         } catch (IOException ex) {
             throw new RuntimeException("Failed to access files: " + ex.getMessage(), ex);
         }
 
-        FloridaInsuranceStats stats = records.stream().collect(
-                FloridaInsuranceStats::new,
-                FloridaInsuranceStats::accept,
-                FloridaInsuranceStats::combine
-        );
+
 
         writeSingleLine("count.txt", String.valueOf(stats.counties.size()));
 
@@ -31,26 +30,25 @@ public class FloridaInsurance {
 
         Path mostValuablePath = Path.of("most_valuable.txt");
         try (BufferedWriter writer = Files.newBufferedWriter(mostValuablePath)) {
-            writer.write("country,value"); // <- TYPO in header (in tests and README !) <- (county not country)
+            writer.write("country,value"); //the tests literally expect country even tho its a typo for county 
             writer.newLine();
 
-            stats.growth.entrySet().stream()
-                    .sorted((e1, e2) -> Double.compare(e2.getValue(), e1.getValue()))
-                    .limit(10)
-                    .forEach(e -> {
-                        try {
-                            writer.write(e.getKey() + "," + String.format("%.2f", e.getValue()));
-                            writer.newLine();
-                        } catch (IOException ex) {
-                            throw new UncheckedIOException(ex);
-                        }
-                    });
+            List<Map.Entry<String, Double>> entries = new ArrayList<>(stats.growth.entrySet());
+
+            entries.sort((e1, e2) -> Double.compare(e2.getValue(), e1.getValue()));
+
+            for (int i = 0; i < Math.min(10, entries.size()); i++) {
+                Map.Entry<String, Double> e = entries.get(i);
+                writer.write(e.getKey() + "," + String.format("%.2f", e.getValue()));
+                writer.newLine();
+            }
+
         } catch (IOException ex) {
             System.err.println("Cannot write most_valuable.txt: " + ex.getMessage());
         }
     }
 
-    private static List<InsuranceRecord> readRecordsFromZip(String zipPath) throws IOException {
+    private static FloridaInsuranceStats readRecordsFromZip(String zipPath) throws IOException {
         try (ZipFile zip = new ZipFile(zipPath)) {
             ZipEntry csvEntry = zip.stream()
                     .filter(e -> !e.isDirectory())
@@ -63,7 +61,11 @@ public class FloridaInsurance {
                 return reader.lines()
                         .skip(1)
                         .map(InsuranceRecord::parseLine)
-                        .toList();
+                        .collect(
+                        FloridaInsuranceStats::new,
+                        FloridaInsuranceStats::accept,
+                        FloridaInsuranceStats::combine
+                        );
             }
         }
     }
